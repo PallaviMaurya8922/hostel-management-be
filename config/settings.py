@@ -213,15 +213,45 @@ REST_FRAMEWORK = {
 }
 
 # CORS Configuration
-# Allow all origins for cross-origin requests.
-# SECURITY: This is intentionally permissive per your request.
-CORS_ALLOW_ALL_ORIGINS = True
-# Credentials must stay disabled when allowing all origins.
-CORS_ALLOW_CREDENTIALS = False
+# Session-based auth from the Vercel frontend requires an explicit origin allowlist.
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+    "https://hostel-management-system-fe.vercel.app",
+    "https://hostel-management-system-fe-ejm5-qci14j2bb.vercel.app",
+    "https://*.onrender.com",
+    "https://*.vercel.app",
+    "https://*",
+]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+]
+CORS_ALLOW_CREDENTIALS = True
 
 # CSRF trusted origins
-# NOTE: Permissive mode: all HTTPS origins are trusted. This is broad by design.
-CSRF_TRUSTED_ORIGINS = ["http://*", "https://*.onrender.com", "https://*.vercel.app", "https://*"]
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:5175",
+    "http://127.0.0.1:5175",
+    "https://hostel-management-system-fe.vercel.app",
+    "https://*.vercel.app",
+    "https://hostel-management-system-fe-ejm5-qci14j2bb.vercel.app",
+    "https://*.onrender.com",
+    "https://*.vercel.app",
+    "https://*",
+]
 
 # Celery Configuration
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
@@ -259,13 +289,13 @@ SECURE_HSTS_SECONDS = 31536000 if not DEBUG else 0  # 1 year in production
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
 SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=False, cast=bool)
-SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=False, cast=bool)
-CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=False, cast=bool)
+SESSION_COOKIE_SECURE = config('SESSION_COOKIE_SECURE', default=not DEBUG, cast=bool)
+CSRF_COOKIE_SECURE = config('CSRF_COOKIE_SECURE', default=not DEBUG, cast=bool)
 SESSION_COOKIE_HTTPONLY = True
 # Must be readable by frontend JavaScript to send X-CSRFToken header in SPA requests.
 CSRF_COOKIE_HTTPONLY = False
-SESSION_COOKIE_SAMESITE = 'Strict'
-CSRF_COOKIE_SAMESITE = 'Strict'
+SESSION_COOKIE_SAMESITE = config('SESSION_COOKIE_SAMESITE', default='None' if not DEBUG else 'Lax')
+CSRF_COOKIE_SAMESITE = config('CSRF_COOKIE_SAMESITE', default='None' if not DEBUG else 'Lax')
 
 # API Security
 API_KEY = config('API_KEY', default='development-api-key-change-in-production')
