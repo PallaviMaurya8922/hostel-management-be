@@ -18,3 +18,4 @@ Pillow==10.1.0
 weasyprint==61.2
 pydyf==0.10.0
 qrcode==8.2
+gunicorn
