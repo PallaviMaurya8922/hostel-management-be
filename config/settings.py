@@ -213,20 +213,11 @@ REST_FRAMEWORK = {
 }
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "http://localhost:5175",
-    "http://127.0.0.1:5175",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
-
-CORS_ALLOW_CREDENTIALS = True
+# Allow all origins for cross-origin requests.
+# SECURITY: This is intentionally permissive per your request.
+CORS_ALLOW_ALL_ORIGINS = True
+# Credentials must stay disabled when allowing all origins.
+CORS_ALLOW_CREDENTIALS = False
 
 # CSRF trusted origins for local frontend development servers (Vite/React)
 CSRF_TRUSTED_ORIGINS = [
@@ -238,6 +229,7 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:5174",
     "http://localhost:5175",
     "http://127.0.0.1:5175",
+    "https://hostel-management-system-fe.vercel.app",
 ]
 
 # Celery Configuration
