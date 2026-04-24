@@ -219,18 +219,9 @@ CORS_ALLOW_ALL_ORIGINS = True
 # Credentials must stay disabled when allowing all origins.
 CORS_ALLOW_CREDENTIALS = False
 
-# CSRF trusted origins for local frontend development servers (Vite/React)
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:5174",
-    "http://127.0.0.1:5174",
-    "http://localhost:5175",
-    "http://127.0.0.1:5175",
-    "https://hostel-management-system-fe.vercel.app",
-]
+# CSRF trusted origins
+# NOTE: Permissive mode: all HTTPS origins are trusted. This is broad by design.
+CSRF_TRUSTED_ORIGINS = ["http://*", "https://*.onrender.com", "https://*.vercel.app", "https://*"]
 
 # Celery Configuration
 CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
