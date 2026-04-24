@@ -271,11 +271,26 @@ class SecurityMiddleware(MiddlewareMixin):
         response['X-XSS-Protection'] = '1; mode=block'
         response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         
-        # Add CORS headers for API endpoints
+        # Add CORS headers for API endpoints with dynamic origin support.
         if request.path.startswith('/api/'):
-            response['Access-Control-Allow-Origin'] = getattr(settings, 'ALLOWED_HOSTS', ['localhost'])[0]
+            origin = request.META.get('HTTP_ORIGIN')
+            allow_all_origins = getattr(settings, 'CORS_ALLOW_ALL_ORIGINS', False)
+            allowed_origins = getattr(settings, 'CORS_ALLOWED_ORIGINS', [])
+
+            if allow_all_origins:
+                # Reflect any caller origin when wildcard CORS is enabled.
+                response['Access-Control-Allow-Origin'] = origin or '*'
+            elif origin and origin in allowed_origins:
+                response['Access-Control-Allow-Origin'] = origin
+            elif allowed_origins:
+                # Keep behavior for non-browser/API clients (eg. curl/Postman) while
+                # avoiding an invalid/missing origin header in API responses.
+                response['Access-Control-Allow-Origin'] = allowed_origins[0]
+
             response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-            response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+            response['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, X-CSRFToken'
+            if getattr(settings, 'CORS_ALLOW_CREDENTIALS', False) and not allow_all_origins:
+                response['Access-Control-Allow-Credentials'] = 'true'
         
         return response
     
