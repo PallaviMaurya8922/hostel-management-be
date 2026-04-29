@@ -155,11 +155,26 @@ class LeaveRequestService:
                     # Parent decision is optional operationally; request submission should not fail
                     # if WhatsApp delivery has a configuration/network issue.
                     try:
-                        send_leave_request(
+                        wa_result = send_leave_request(
                             phone=student.parent_phone,
                             leave_id=str(absence_record.absence_id),
-                            student_name=student.name
+                            student_name=student.name,
                         )
+                        if isinstance(wa_result, dict) and not wa_result.get("skipped"):
+                            message_id = None
+                            msgs = wa_result.get("messages")
+                            if isinstance(msgs, list) and msgs and isinstance(msgs[0], dict):
+                                message_id = msgs[0].get("id")
+                            absence_record.parent_whatsapp_sent_at = timezone.now()
+                            if message_id:
+                                absence_record.parent_whatsapp_message_id = str(message_id)[:128]
+                            absence_record.save(
+                                update_fields=[
+                                    "parent_whatsapp_sent_at",
+                                    "parent_whatsapp_message_id",
+                                    "updated_at",
+                                ]
+                            )
                     except Exception as whatsapp_error:
                         self.logger.warning(
                             "Failed to send parent WhatsApp request for absence %s: %s",
@@ -228,7 +243,9 @@ class LeaveRequestService:
         self, 
         absence_record: AbsenceRecord, 
         approved_by: Staff, 
-        approval_reason: str = "Approved by warden"
+        approval_reason: str = "Approved by warden",
+        bypass_parent_approval: bool = False,
+        override_reason: str | None = None,
     ) -> LeaveRequestResult:
         """
         Approve a pending leave request and generate digital pass.
@@ -249,12 +266,22 @@ class LeaveRequestService:
                     error="Invalid status for approval"
                 )
 
-            if absence_record.parent_approval is not True:
+            if absence_record.parent_approval is not True and not bypass_parent_approval:
                 return LeaveRequestResult(
                     success=False,
                     message="Parent approval required before warden approval",
                     error="Parent approval required"
                 )
+
+            if bypass_parent_approval:
+                cleaned_override = (override_reason or "").strip()
+                if not cleaned_override or len(cleaned_override) < 8:
+                    return LeaveRequestResult(
+                        success=False,
+                        message="Override reason is required to bypass parent approval",
+                        error="override_reason required",
+                    )
+                approval_reason = f"{approval_reason} (Parent approval bypassed: {cleaned_override})"
             
             with transaction.atomic():
                 # Update absence record
@@ -297,7 +324,10 @@ class LeaveRequestService:
                     student=absence_record.student,
                     absence_record=absence_record,
                     decision='approved',
-                    reasoning=f"Manually approved by {approved_by.name}: {approval_reason}",
+                    reasoning=(
+                        f"Manually approved by {approved_by.name}: {approval_reason}"
+                        + (" (parent override)" if bypass_parent_approval else "")
+                    ),
                     auto_approved=False,
                     staff_member=approved_by
                 )

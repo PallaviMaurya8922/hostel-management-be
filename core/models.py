@@ -216,6 +216,22 @@ class AbsenceRecord(models.Model):
     auto_approved = models.BooleanField(default=False, help_text="Whether request was auto-approved")
     parent_approval = models.BooleanField(null=True, default=None, help_text="Parent decision for leave approval")
     parent_response_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when parent responded")
+    parent_whatsapp_sent_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the interactive parent WhatsApp was accepted by Meta (not skipped).",
+    )
+    parent_whatsapp_message_id = models.CharField(
+        max_length=128,
+        blank=True,
+        null=True,
+        help_text="WhatsApp Cloud API message id for delivery/read webhooks.",
+    )
+    parent_whatsapp_read_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When Meta reported the parent message as read (webhook only).",
+    )
     approval_reason = models.TextField(blank=True, null=True, help_text="Reason for approval/rejection")
     approved_by = models.ForeignKey(Staff, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_absences')
     created_at = models.DateTimeField(auto_now_add=True)

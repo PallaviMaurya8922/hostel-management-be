@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from django.utils import timezone
 from django.core.cache import cache
-from django.db.models import Q, Count, Case, When, IntegerField
+from django.db.models import Q, Count, Case, When, IntegerField, Exists, OuterRef
 from ..models import Student, GuestRequest, AbsenceRecord, MaintenanceRequest, Message
 
 logger = logging.getLogger(__name__)
@@ -548,66 +548,73 @@ class DashboardService:
     
     def get_students_present_details(self) -> Dict[str, Any]:
         """
-        Get detailed information about students currently present.
-        
-        Returns:
-            Dictionary with present students details
+        Full hostel roster for warden reports (not only students without approved leave).
+
+        Every enrolled student is listed. ``on_approved_leave`` is true when an
+        **approved** absence overlaps ``now`` (physically away). Pending or rejected
+        leave does not remove a student from the roster so they still appear alongside
+        the request queue.
         """
         try:
             now = timezone.now()
-            
-            # Get all students
-            all_students = Student.objects.all()
-            
-            # Get students who are currently absent
-            absent_student_ids = AbsenceRecord.objects.filter(
+
+            approved_leave_now = AbsenceRecord.objects.filter(
+                student_id=OuterRef('pk'),
                 status='approved',
                 start_date__lte=now,
-                end_date__gte=now
-            ).values_list('student_id', flat=True)
-            
-            # Students present = All students - Currently absent
-            present_students = all_students.exclude(id__in=absent_student_ids)
-            
-            # Get guests for present students
-            present_students_with_guests = present_students.prefetch_related(
-                'guest_requests'
-            ).annotate(
-                active_guests_count=Count(
-                    'guest_requests',
-                    filter=Q(
-                        guest_requests__status='approved',
-                        guest_requests__start_date__lte=now,
-                        guest_requests__end_date__gte=now
-                    )
-                )
+                end_date__gte=now,
             )
-            
-            present_students_data = []
-            for student in present_students_with_guests:
-                present_students_data.append({
-                    'student_id': student.student_id,
-                    'name': student.name,
-                    'room_number': student.room_number,
-                    'block': student.block,
-                    'active_guests': student.active_guests_count,
-                    'phone': student.phone,
-                    'parent_phone': student.parent_phone
-                })
-            
+
+            roster = (
+                Student.objects.annotate(
+                    on_approved_leave_now=Exists(approved_leave_now),
+                    active_guests_count=Count(
+                        'guest_requests',
+                        filter=Q(
+                            guest_requests__status='approved',
+                            guest_requests__start_date__lte=now,
+                            guest_requests__end_date__gte=now,
+                        ),
+                    ),
+                )
+                .order_by('student_id')
+            )
+
+            students_data = []
+            physically_present = 0
+            for student in roster:
+                on_leave = bool(student.on_approved_leave_now)
+                if not on_leave:
+                    physically_present += 1
+                students_data.append(
+                    {
+                        'student_id': student.student_id,
+                        'name': student.name,
+                        'room_number': student.room_number,
+                        'block': student.block,
+                        'active_guests': student.active_guests_count,
+                        'phone': student.phone,
+                        'parent_phone': student.parent_phone,
+                        'on_approved_leave': on_leave,
+                        'presence_label': 'On approved leave' if on_leave else 'Present in hostel',
+                    }
+                )
+
             return {
-                'total_present': len(present_students_data),
-                'students': present_students_data,
-                'calculated_at': now.isoformat()
+                'total_students': len(students_data),
+                'physically_present': physically_present,
+                'students': students_data,
+                'calculated_at': now.isoformat(),
             }
             
         except Exception as e:
             logger.error(f"Error getting present students details: {e}")
             return {
-                'total_present': 0,
+                'total_students': 0,
+                'physically_present': 0,
                 'students': [],
                 'error': str(e),
-                'calculated_at': timezone.now().isoformat()
+                'calculated_at': timezone.now().isoformat(),
             }
     
     def get_maintenance_overview(self, force_refresh: bool = False) -> Dict[str, Any]:

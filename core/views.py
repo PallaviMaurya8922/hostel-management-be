@@ -154,6 +154,17 @@ class GuestRequestViewSet(ModelViewSet):
     queryset = GuestRequest.objects.all().order_by('-created_at')
     serializer_class = GuestRequestSerializer
     permission_classes = [AllowAny]
+    # Full queue for wardens/admins; default PAGE_SIZE would hide most requests from the UI.
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = GuestRequest.objects.select_related('student', 'approved_by').order_by('-created_at')
+        user_object, _ = get_authenticated_user(self.request)
+        if isinstance(user_object, Student):
+            return qs.filter(student=user_object)
+        if isinstance(user_object, Staff) and user_object.role in ('warden', 'admin', 'security'):
+            return qs
+        return qs.none()
 
     def perform_create(self, serializer):
         """Attach the logged-in student; `student` and `status` are read-only on the serializer."""
@@ -182,6 +193,16 @@ class AbsenceRecordViewSet(ModelViewSet):
     queryset = AbsenceRecord.objects.all().order_by('-created_at')
     serializer_class = AbsenceRecordSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
+
+    def get_queryset(self):
+        qs = AbsenceRecord.objects.select_related('student', 'approved_by').order_by('-created_at')
+        user_object, _ = get_authenticated_user(self.request)
+        if isinstance(user_object, Student):
+            return qs.filter(student=user_object)
+        if isinstance(user_object, Staff) and user_object.role in ('warden', 'admin'):
+            return qs
+        return qs.none()
 
 
 class MaintenanceRequestViewSet(ModelViewSet):
@@ -190,7 +211,17 @@ class MaintenanceRequestViewSet(ModelViewSet):
     queryset = MaintenanceRequest.objects.all().order_by('-created_at')
     serializer_class = MaintenanceRequestSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_queryset(self):
+        qs = MaintenanceRequest.objects.select_related('student', 'assigned_to').order_by('-created_at')
+        user_object, _ = get_authenticated_user(self.request)
+        if isinstance(user_object, Student):
+            return qs.filter(student=user_object)
+        if isinstance(user_object, Staff) and user_object.role in ('warden', 'admin', 'maintenance'):
+            return qs
+        return qs.none()
 
     def perform_create(self, serializer):
         """Attach the logged-in student; `student` is read-only on the serializer."""
@@ -209,9 +240,23 @@ class StudentViewSet(ReadOnlyModelViewSet):
 
     queryset = Student.objects.all().order_by('student_id')
     serializer_class = StudentSerializer
-    permission_classes = [AllowAny]
+    # IMPORTANT: students must not be able to list other students' PII (email/phone).
+    permission_classes = [IsAuthenticated]
     lookup_field = 'student_id'
     lookup_url_kwarg = 'pk'
+
+    def get_queryset(self):
+        user_object, _ = get_authenticated_user(self.request)
+
+        # Student can only see their own profile.
+        if isinstance(user_object, Student):
+            return Student.objects.filter(pk=user_object.pk).order_by('student_id')
+
+        # Warden/admin can see all enrolled students.
+        if isinstance(user_object, Staff) and user_object.role in ('warden', 'admin'):
+            return Student.objects.all().order_by('student_id')
+
+        return Student.objects.none()
 
 
 class StaffViewSet(ReadOnlyModelViewSet):
@@ -219,7 +264,16 @@ class StaffViewSet(ReadOnlyModelViewSet):
 
     queryset = Staff.objects.all().order_by('staff_id')
     serializer_class = StaffSerializer
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user_object, _ = get_authenticated_user(self.request)
+
+        if isinstance(user_object, Staff) and user_object.role in ('warden', 'admin'):
+            return Staff.objects.all().order_by('staff_id')
+
+        # Do not expose staff directory to students or non-admin staff.
+        return Staff.objects.none()
 
 
 class AuditLogViewSet(ReadOnlyModelViewSet):
@@ -906,6 +960,7 @@ def get_digital_passes(request):
         for pass_obj in digital_passes:
             passes_data.append({
                 'pass_number': pass_obj.pass_number,
+                'absence_id': str(pass_obj.absence_record.absence_id) if pass_obj.absence_record_id else None,
                 'student_name': pass_obj.student.name,  # From pass record (correct student)
                 'student_id': pass_obj.student.student_id,  # From pass record (correct student)
                 'room_number': pass_obj.student.room_number,  # From pass record (correct student)
@@ -1029,6 +1084,8 @@ def approve_leave_request(request):
     try:
         absence_id = request.data.get('absence_id')
         approval_reason = request.data.get('reason', 'Approved by warden')
+        bypass_parent_approval = bool(request.data.get('bypass_parent_approval', False))
+        override_reason = (request.data.get('override_reason') or '').strip()
         
         if not absence_id:
             return Response({
@@ -1053,12 +1110,32 @@ def approve_leave_request(request):
         
         # Get or create default staff for development
         staff_member = get_staff_from_request_or_dev(request)
+
+        if bypass_parent_approval:
+            if not staff_member or not isinstance(staff_member, Staff) or staff_member.role not in ('warden', 'admin'):
+                return Response(
+                    {
+                        'success': False,
+                        'error': 'Only warden/admin can bypass parent approval',
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            if not override_reason or len(override_reason) < 8:
+                return Response(
+                    {
+                        'success': False,
+                        'error': 'override_reason is required (min 8 chars) when bypassing parent approval',
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
         
         # Approve the leave request
         result = leave_request_service.approve_leave_request(
             absence_record=absence_record,
             approved_by=staff_member,
-            approval_reason=approval_reason
+            approval_reason=approval_reason,
+            bypass_parent_approval=bypass_parent_approval,
+            override_reason=override_reason,
         )
         
         if result.success:

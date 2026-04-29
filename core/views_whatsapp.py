@@ -12,7 +12,6 @@ from core.services.whatsapp_service import send_whatsapp_text, check_token_valid
 logger = logging.getLogger(__name__)
 
 
-
 def whatsapp_verify(request):
     """Webhook verification endpoint for Meta WhatsApp Cloud API."""
     mode = request.GET.get("hub.mode")
@@ -23,6 +22,28 @@ def whatsapp_verify(request):
         return HttpResponse(challenge, status=200)
 
     return HttpResponse("Verification failed", status=403)
+
+
+def _handle_whatsapp_statuses(value: dict) -> None:
+    """Persist read time when Meta sends status=read for a tracked outbound message."""
+    statuses = value.get("statuses")
+    if not isinstance(statuses, list):
+        return
+    for st in statuses:
+        if not isinstance(st, dict):
+            continue
+        if st.get("status") != "read":
+            continue
+        mid = st.get("id")
+        if not mid:
+            continue
+        mid_str = str(mid)[:128]
+        updated = AbsenceRecord.objects.filter(
+            parent_whatsapp_message_id=mid_str,
+            parent_whatsapp_read_at__isnull=True,
+        ).update(parent_whatsapp_read_at=timezone.now())
+        if updated:
+            logger.info("WhatsApp read receipt stored for absence message_id=%s", mid_str)
 
 
 @csrf_exempt
@@ -36,11 +57,22 @@ def whatsapp_webhook(request):
 
     try:
         data = json.loads(request.body or "{}")
-        value = data["entry"][0]["changes"][0]["value"]
-
-        # Ignore delivery/read status updates.
-        if "messages" not in value:
+        entry = data.get("entry")
+        if not isinstance(entry, list) or not entry:
             return JsonResponse({"status": "ignored"})
+
+        changes = entry[0].get("changes")
+        if not isinstance(changes, list) or not changes:
+            return JsonResponse({"status": "ignored"})
+
+        value = changes[0].get("value") or {}
+        if not isinstance(value, dict):
+            return JsonResponse({"status": "ignored"})
+
+        _handle_whatsapp_statuses(value)
+
+        if "messages" not in value:
+            return JsonResponse({"status": "ok"})
 
         msg = value["messages"][0]
         phone = msg.get("from")
@@ -89,10 +121,9 @@ def check_whatsapp_token(request):
     """Check if the WhatsApp token is valid."""
     if request.method != "GET":
         return JsonResponse({"error": "GET method required"}, status=405)
-    
+
     result = check_token_validity()
-    
-    # Return 200 if valid, 400 if invalid (for easy frontend detection)
+
     status_code = 200 if result.get("valid") else 400
-    
+
     return JsonResponse(result, status=status_code)
