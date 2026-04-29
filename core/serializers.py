@@ -19,7 +19,7 @@ class StudentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Student
         fields = [
-            'student_id', 'name', 'room_number', 'block', 'phone', 'parent_phone',
+            'student_id', 'name', 'email', 'room_number', 'block', 'phone', 'parent_phone',
             'violation_count', 'last_violation_date', 'has_recent_violations',
             'created_at', 'updated_at'
         ]
@@ -177,10 +177,12 @@ class AbsenceRecordSerializer(serializers.ModelSerializer):
             'start_date', 'end_date', 'reason', 'emergency_contact',
             'status', 'auto_approved', 'parent_approval', 'parent_response_at', 'approval_reason', 'approved_by',
             'approved_by_name', 'duration_days', 'is_short_leave',
+            'parent_whatsapp_sent_at', 'parent_whatsapp_message_id', 'parent_whatsapp_read_at',
             'created_at', 'updated_at'
         ]
         read_only_fields = [
-            'absence_id', 'student', 'auto_approved', 'approved_by', 'created_at', 'updated_at'
+            'absence_id', 'student', 'auto_approved', 'approved_by', 'created_at', 'updated_at',
+            'parent_whatsapp_sent_at', 'parent_whatsapp_message_id', 'parent_whatsapp_read_at',
         ]
 
 
